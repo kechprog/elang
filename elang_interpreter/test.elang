@@ -1,0 +1,4 @@
+;; test.elang
+(let* [(x 10)
+       (y (+ x 5))]
+  (print y))
