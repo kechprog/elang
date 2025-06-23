@@ -8,32 +8,37 @@ use std::sync::Arc;
 /// as specified by the memory model.
 #[derive(Clone)]
 pub enum Value {
-    Number(f64),
+    Int(i64),
+    Float(f64),
     Bool(bool),
     Char(char),
-    String(String),
-    /// Represents the 'none' value, used with `(Option T)`.
-    Nil,
+    Optional(Option<Box<Value>>),
     /// A struct instance.
     Struct(Arc<StructInstance>),
     /// A first-class function, which includes its captured environment (a closure).
     Function(Arc<FunctionValue>),
     NativeFunc(fn(Vec<Value>) -> Value),
+    NativeClosure(Arc<dyn Fn(Vec<Value>) -> Value + Send + Sync>),
     Error(String),
+    GenericStructDef(Arc<StructDef>),
+    Symbol(String),
 }
 
 impl std::fmt::Debug for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Value::Number(n) => write!(f, "Number({})", n),
+            Value::Int(n) => write!(f, "Int({})", n),
+            Value::Float(n) => write!(f, "Float({})", n),
             Value::Bool(b) => write!(f, "Bool({})", b),
             Value::Char(c) => write!(f, "Char({})", c),
-            Value::String(s) => write!(f, "String({:?})", s),
-            Value::Nil => write!(f, "Nil"),
+            Value::Optional(opt) => write!(f, "Optional({:?})", opt),
             Value::Struct(s) => write!(f, "Struct({:?})", s),
             Value::Function(_) => write!(f, "Function"),
             Value::NativeFunc(_) => write!(f, "NativeFunc"),
+            Value::NativeClosure(_) => write!(f, "NativeClosure"),
             Value::Error(e) => write!(f, "Error({})", e),
+            Value::GenericStructDef(d) => write!(f, "GenericStructDef({:?})", d),
+            Value::Symbol(s) => write!(f, "Symbol({})", s),
         }
     }
 }
@@ -41,15 +46,21 @@ impl std::fmt::Debug for Value {
 impl std::fmt::Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Value::Number(n) => write!(f, "{}", n),
+            Value::Int(n) => write!(f, "{}", n),
+            Value::Float(n) => write!(f, "{}", n),
             Value::Bool(b) => write!(f, "{}", b),
             Value::Char(c) => write!(f, "{}", c),
-            Value::String(s) => write!(f, "{}", s),
-            Value::Nil => write!(f, "nil"),
+            Value::Optional(opt) => match opt {
+                Some(val) => write!(f, "(some {})", val),
+                None => write!(f, "none"),
+            },
             Value::Struct(s) => write!(f, "<struct {}>", s.name),
             Value::Function(_) => write!(f, "<function>"),
             Value::NativeFunc(_) => write!(f, "<native-function>"),
+            Value::NativeClosure(_) => write!(f, "<native-closure>"),
             Value::Error(e) => write!(f, "Error: {}", e),
+            Value::GenericStructDef(d) => write!(f, "<generic-struct-def {}>", d.name),
+            Value::Symbol(s) => write!(f, "'{}", s),
         }
     }
 }
@@ -57,11 +68,12 @@ impl std::fmt::Display for Value {
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Value::Number(a), Value::Number(b)) => a == b,
+            (Value::Int(a), Value::Int(b)) => a == b,
+            (Value::Float(a), Value::Float(b)) => a == b,
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::Char(a), Value::Char(b)) => a == b,
-            (Value::String(a), Value::String(b)) => a == b,
-            (Value::Nil, Value::Nil) => true,
+            (Value::Optional(a), Value::Optional(b)) => a == b,
+            (Value::Symbol(a), Value::Symbol(b)) => a == b,
             _ => false,
         }
     }
@@ -72,7 +84,7 @@ impl PartialEq for Value {
 pub struct StructInstance {
     /// The name of the struct definition (e.g., "vec3").
     pub name: String,
-    pub fields: HashMap<String, Value>,
+    pub fields: Vec<(String, Value)>,
 }
 
 /// Represents a closure: a function with its captured lexical environment.
@@ -80,6 +92,7 @@ pub struct StructInstance {
 pub struct FunctionValue {
     pub name: Option<String>,
     pub params: Vec<(Pattern, Type)>,
+    pub return_type: Type,
     pub body: Expr,
     pub captured_env: Arc<Environment>,
 }
@@ -129,6 +142,38 @@ impl Environment {
 
 // --- AST (Abstract Syntax Tree) Nodes ---
 
+#[derive(Debug, Clone)]
+pub enum TopLevel {
+    Expr(Expr),
+    StructDef(StructDef),
+    VarDef(String, Expr),
+    FunDef(FunDef),
+    Provides(Vec<String>),
+    Require(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct Module {
+    pub provides: Vec<String>,
+    pub requires: Vec<String>,
+    pub body: Vec<TopLevel>,
+}
+
+#[derive(Debug, Clone)]
+pub struct StructDef {
+    pub name: String,
+    pub params: Vec<String>,
+    pub fields: Vec<(String, Type)>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FunDef {
+    pub name: String,
+    pub params: Vec<(Pattern, Type)>,
+    pub return_type: Type,
+    pub body: Expr,
+}
+
 /// Represents an expression that can be evaluated to a `Value`.
 #[derive(Debug, Clone)]
 pub enum Expr {
@@ -137,18 +182,27 @@ pub enum Expr {
     Identifier(String),
 
     // Control Flow
+    Quote(lexpr::Value),
     If {
         condition: Box<Expr>,
         then_branch: Box<Expr>,
         else_branch: Box<Expr>,
     },
-
+    IfLet {
+        identifier: String,
+        expr: Box<Expr>,
+        then_branch: Box<Expr>,
+        else_branch: Box<Expr>,
+    },
     // Bindings
     Let {
         bindings: Vec<(Pattern, Expr)>,
         body: Box<Expr>,
-        /// true for `let*` (sequential), false for `let` (parallel).
-        sequential: bool,
+    },
+
+    LetStar {
+        bindings: Vec<(Pattern, Expr)>,
+        body: Box<Expr>,
     },
 
     // Operations
@@ -172,7 +226,6 @@ pub enum Literal {
     Float(f64),
     Bool(bool),
     Char(char),
-    String(String),
     Nil,
 }
 
@@ -184,6 +237,7 @@ pub enum Pattern {
         name: String,
         fields: Vec<String>,
     },
+    List(Vec<Pattern>),
 }
 
 /// Represents a type annotation in the source code.
@@ -194,13 +248,14 @@ pub enum Type {
     Bool,
     Char,
     Void,
+    GenericParam(String),
     /// A user-defined type, like `string` or `(vec3 float)`.
     Named {
         name: String,
         type_params: Vec<Type>,
     },
     /// A function's type signature, e.g., `(fun-type (int) bool)`.
-    Function {
+    Func {
         param_types: Vec<Type>,
         return_type: Box<Type>,
     },

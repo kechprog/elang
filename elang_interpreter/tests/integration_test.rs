@@ -1,22 +1,28 @@
-use elang_interpreter::{ast, interpreter, parser};
+use elang_interpreter::{ast, interpreter};
 
 fn eval_source(source: &str) -> Result<ast::Value, String> {
-    let ast = parser::parse(source)?;
-    let interpreter = interpreter::Interpreter::new();
-    // Assuming we are testing single expressions for now
-    interpreter.eval(&ast[0])
+    let mut interpreter = interpreter::Interpreter::new();
+    let module = elang_interpreter::parser::parse(source)?;
+    if module.body.is_empty() {
+        return Ok(ast::Value::Optional(None));
+    }
+    let mut final_val = ast::Value::Optional(None);
+    for item in module.body {
+        final_val = interpreter.eval(&item)?;
+    }
+    Ok(final_val)
 }
 
 #[test]
 fn test_literal_number() {
     let result = eval_source("42");
-    assert_eq!(result, Ok(ast::Value::Number(42.0)));
+    assert_eq!(result, Ok(ast::Value::Int(42)));
 }
 
 #[test]
 fn test_simple_addition() {
     let result = eval_source("(+ 1 2)");
-    assert_eq!(result, Ok(ast::Value::Number(3.0)));
+    assert_eq!(result, Ok(ast::Value::Int(3)));
 }
 
 #[test]
@@ -31,19 +37,19 @@ fn test_unbound_variable() {
 #[test]
 fn test_if_true() {
     let result = eval_source("(if true 1 2)");
-    assert_eq!(result, Ok(ast::Value::Number(1.0)));
+    assert_eq!(result, Ok(ast::Value::Int(1)));
 }
 
 #[test]
 fn test_if_false() {
     let result = eval_source("(if false 1 2)");
-    assert_eq!(result, Ok(ast::Value::Number(2.0)));
+    assert_eq!(result, Ok(ast::Value::Int(2)));
 }
 
 #[test]
 fn test_if_with_expression() {
     let result = eval_source("(if (= 2 (+ 1 1)) 10 20)");
-    assert_eq!(result, Ok(ast::Value::Number(10.0)));
+    assert_eq!(result, Ok(ast::Value::Int(10)));
 }
 
 #[test]
@@ -58,13 +64,13 @@ fn test_if_type_error() {
 #[test]
 fn test_let_binding() {
     let result = eval_source("(let [(x 10)] x)");
-    assert_eq!(result, Ok(ast::Value::Number(10.0)));
+    assert_eq!(result, Ok(ast::Value::Int(10)));
 }
 
 #[test]
 fn test_let_sequential() {
     let result = eval_source("(let* [(x 10) (y (+ x 5))] y)");
-    assert_eq!(result, Ok(ast::Value::Number(15.0)));
+    assert_eq!(result, Ok(ast::Value::Int(15)));
 }
 
 #[test]

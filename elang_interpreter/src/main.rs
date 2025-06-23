@@ -1,6 +1,6 @@
-use elang_interpreter::{ast, interpreter, parser};
+use elang_interpreter::interpreter;
 use std::env;
-use std::fs;
+use std::path::Path;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -10,34 +10,9 @@ fn main() {
     }
 
     let file_path = &args[1];
-    let source = match fs::read_to_string(file_path) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("Error reading file '{}': {}", file_path, e);
-            return;
-        }
-    };
-
-    let ast = match parser::parse(&source) {
-        Ok(ast) => ast,
-        Err(e) => {
-            eprintln!("Parsing error: {}", e);
-            return;
-        }
-    };
-
-    let interpreter = interpreter::Interpreter::new();
-    let mut last_result = Ok(ast::Value::Nil);
-
-    for expr in ast {
-        last_result = interpreter.eval(&expr);
-        if let Err(e) = &last_result {
-            eprintln!("Runtime error: {}", e);
-            return;
-        }
-    }
-
-    if let Ok(value) = last_result {
-        println!("{}", value);
+    let mut interpreter = interpreter::Interpreter::new_with_path(file_path.clone());
+    match interpreter.eval_file(Path::new(file_path)) {
+        Ok(value) => println!("{}", value),
+        Err(e) => eprintln!("Error: {}", e),
     }
 }

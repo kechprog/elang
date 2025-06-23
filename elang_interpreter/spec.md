@@ -99,6 +99,25 @@ Defines a top-level constant or a named struct.
 (def int-vec2 (struct x :int y :int))
 ```
 
+#### Struct Field Access
+
+Accessing fields of a struct is done via a function-like call. The name of the accessor is formed by concatenating the struct name, a hyphen, and the field name.
+
+**Syntax:**
+`(struct-name-field-name instance-expr)`
+
+*   This syntax is consistent for both regular and generic structs.
+*   The `instance-expr` must evaluate to an instance of the corresponding struct.
+
+**Example:**
+```elang
+(def int-vec2 (struct x :int y :int))
+(def my-vec (make-int-vec2 10 20))
+
+(let [x-val (int-vec2-x my-vec)] ;; x-val is 10
+  x-val)
+```
+
 ### 3.2. Generics
 
 Generic structs are defined by including type parameters in the `def` form.
@@ -132,6 +151,26 @@ The sole control flow construct. It is an expression that evaluates to one of tw
 
 *   `condition-expr` must evaluate to a `bool`.
 *   `then-expr` and `else-expr` must evaluate to the same type.
+
+#### `(if-let ...)` - Option Destructuring
+
+A dedicated construct for destructuring `(Option T)` types. This avoids the ambiguity of the `(if (function-call) ...)` form. It binds a variable to the value inside an option if it is not `none`.
+
+**Syntax:**
+`(if-let (identifier option-expr) then-expr else-expr)`
+
+*   `option-expr` must evaluate to an `(Option T)`.
+*   If `option-expr` evaluates to a value, `identifier` is bound to that value within the `then-expr`.
+*   If `option-expr` is `none`, the `else-expr` is evaluated.
+*   `then-expr` and `else-expr` must evaluate to the same type.
+
+**Example:**
+```elang
+(fun (process-optional-value opt :(Option int)) :int
+  (if-let (val opt)
+    (+ val 1)  ;; 'val' is bound to the int inside the option.
+    -1))       ;; Executed if 'opt' is 'none'.
+```
 
 ### 3.4. Local Bindings
 
@@ -184,6 +223,7 @@ Similar to `let`, but bindings are evaluated and created sequentially. A binding
 A built-in generic type to represent an optional value. It is designed to replace `null`.
 *   It has two states: a value of type `T`, or `none`.
 *   Unlike structs, `(Option T)` is a trivial type and is stack-allocated.
+*   The `some` keyword is used to construct an `Option` with a value, e.g., `(some 10)` creates an `(Option int)`. The `none` keyword is used for an empty `Option`.
 *   A function returning `(Option int)` can return an `int` directly or `none`.
 
 **Example:**
@@ -268,15 +308,15 @@ The standard library provides a minimal set of core data structures and function
 
 ### 7.1. Core Types
 
-#### `(cons T)`
+#### `(Cons T)`
 
 The fundamental generic list structure.
-`(def (cons T) (struct e :T next :(Option (cons T))))`
+`(def (Cons T) (struct e :T next :(Option (Cons T))))`
 
 #### `string`
 
 A string is defined as a list of characters.
-`(def string (cons char))`
+`(def string (Cons char))`
 
 ### 7.2. Core Functions
 
