@@ -1,4 +1,4 @@
-use crate::ast::{self, Value};
+use crate::ast;
 use std::collections::HashMap;
 
 pub fn populate_env(env: &mut ast::Environment) {

@@ -1,4 +1,4 @@
-use elang_interpreter::{ast::{self, Value}, interpreter};
+use elang_interpreter::{ast, interpreter};
 
 fn eval_source(source: &str) -> Result<ast::Value, String> {
     let mut interpreter = interpreter::Interpreter::new();
