@@ -1,7 +1,13 @@
-use crate::ast::{self, Expr, FunDef, Literal, Module, Pattern, TopLevel, Type};
+//! Parser for the Elang programming language.
+//! 
+//! This crate provides parsing functionality that converts S-expression source code
+//! into the AST structures defined in `elang_ast`. It can be used by both the
+//! interpreter and other tools like the LSP server.
+
+use elang_ast::{Expr, FunDef, Literal, Module, Pattern, TopLevel, Type, StructDef};
 use lexpr::{parse::Error, Parser, Value};
 
-pub fn parse(source: &str) -> Result<ast::Module, String> {
+pub fn parse(source: &str) -> Result<Module, String> {
     let mut parser = Parser::from_str(source);
     let mut provides = Vec::new();
     let mut requires = Vec::new();
@@ -238,7 +244,7 @@ fn parse_fun_definition(parts: &[Value]) -> Result<TopLevel, String> {
     Ok(TopLevel::FunDef(fun_def))
 }
 
-fn parse_def(parts: &[Value]) -> Result<ast::StructDef, String> {
+fn parse_def(parts: &[Value]) -> Result<StructDef, String> {
     if parts.len() != 2 {
         return Err(format!("'def' expects 2 arguments, got {}", parts.len()));
     }
@@ -301,7 +307,7 @@ fn parse_def(parts: &[Value]) -> Result<ast::StructDef, String> {
         i = next_i;
     }
 
-    Ok(ast::StructDef {
+    Ok(StructDef {
         name,
         params,
         fields,
@@ -436,9 +442,6 @@ fn parse_expr(value: &Value) -> Result<Expr, String> {
     }
 }
 
-
-
-
 fn parse_let(op: &str, parts: &[Value]) -> Result<Expr, String> {
     if parts.len() != 2 {
         return Err(format!("'{}' expects 2 arguments, got {}", op, parts.len()));
@@ -570,8 +573,6 @@ fn parse_call(head: &Value, tail: &[Value]) -> Result<Expr, String> {
         arguments,
     })
 }
-
-
 
 fn parse_pattern(value: &Value) -> Result<Pattern, String> {
     match value {
@@ -754,5 +755,562 @@ fn parse_type(value: &Value) -> Result<Type, String> {
             }
         }
         _ => Err("Invalid type expression".to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use elang_ast::{Expr, Literal, Pattern, TopLevel, Type};
+
+    // --- Basic Parsing Tests ---
+
+    #[test]
+    fn test_literal_parsing() {
+        // Integer literals
+        let module = parse("42").unwrap();
+        assert_eq!(module.body.len(), 1);
+        match &module.body[0] {
+            TopLevel::Expr(Expr::Literal(Literal::Int(n))) => assert_eq!(*n, 42),
+            _ => panic!("Expected integer literal"),
+        }
+
+        // Float literals
+        let module = parse("3.14").unwrap();
+        match &module.body[0] {
+            TopLevel::Expr(Expr::Literal(Literal::Float(f))) => assert!((f - 3.14).abs() < f64::EPSILON),
+            _ => panic!("Expected float literal"),
+        }
+
+        // Boolean literals
+        let module = parse("true").unwrap();
+        match &module.body[0] {
+            TopLevel::Expr(Expr::Literal(Literal::Bool(b))) => assert!(*b),
+            _ => panic!("Expected boolean literal"),
+        }
+
+        let module = parse("false").unwrap();
+        match &module.body[0] {
+            TopLevel::Expr(Expr::Literal(Literal::Bool(b))) => assert!(!*b),
+            _ => panic!("Expected boolean literal"),
+        }
+
+        // Character literals
+        let module = parse("#\\a").unwrap();
+        match &module.body[0] {
+            TopLevel::Expr(Expr::Literal(Literal::Char(c))) => assert_eq!(*c, 'a'),
+            _ => panic!("Expected character literal"),
+        }
+    }
+
+    #[test]
+    fn test_identifier_parsing() {
+        let module = parse("x").unwrap();
+        match &module.body[0] {
+            TopLevel::Expr(Expr::Identifier(name)) => assert_eq!(name, "x"),
+            _ => panic!("Expected identifier"),
+        }
+
+        let module = parse("my-variable").unwrap();
+        match &module.body[0] {
+            TopLevel::Expr(Expr::Identifier(name)) => assert_eq!(name, "my-variable"),
+            _ => panic!("Expected identifier"),
+        }
+    }
+
+    #[test]
+    fn test_simple_expressions() {
+        // Simple function call
+        let module = parse("(+ 1 2)").unwrap();
+        match &module.body[0] {
+            TopLevel::Expr(Expr::Call { function, arguments }) => {
+                assert!(matches!(function.as_ref(), Expr::Identifier(_)));
+                assert_eq!(arguments.len(), 2);
+            }
+            _ => panic!("Expected function call"),
+        }
+
+        // Nested function call
+        let module = parse("(+ (* 2 3) 4)").unwrap();
+        match &module.body[0] {
+            TopLevel::Expr(Expr::Call { function, arguments }) => {
+                assert!(matches!(function.as_ref(), Expr::Identifier(_)));
+                assert_eq!(arguments.len(), 2);
+                assert!(matches!(arguments[0], Expr::Call { .. }));
+            }
+            _ => panic!("Expected nested function call"),
+        }
+    }
+
+    #[test]
+    fn test_function_calls_with_various_argument_counts() {
+        // No arguments
+        let module = parse("(foo)").unwrap();
+        match &module.body[0] {
+            TopLevel::Expr(Expr::Call { arguments, .. }) => assert_eq!(arguments.len(), 0),
+            _ => panic!("Expected function call"),
+        }
+
+        // One argument
+        let module = parse("(foo 1)").unwrap();
+        match &module.body[0] {
+            TopLevel::Expr(Expr::Call { arguments, .. }) => assert_eq!(arguments.len(), 1),
+            _ => panic!("Expected function call"),
+        }
+
+        // Multiple arguments
+        let module = parse("(foo 1 2 3 4 5)").unwrap();
+        match &module.body[0] {
+            TopLevel::Expr(Expr::Call { arguments, .. }) => assert_eq!(arguments.len(), 5),
+            _ => panic!("Expected function call"),
+        }
+    }
+
+    // --- Complex Parsing Tests ---
+
+    #[test]
+    fn test_nested_expressions() {
+        let source = "(if (> x 0) (+ x 1) (- x 1))";
+        let module = parse(source).unwrap();
+        
+        match &module.body[0] {
+            TopLevel::Expr(Expr::If { condition, then_branch, else_branch }) => {
+                assert!(matches!(condition.as_ref(), Expr::Call { .. }));
+                assert!(matches!(then_branch.as_ref(), Expr::Call { .. }));
+                assert!(matches!(else_branch.as_ref(), Expr::Call { .. }));
+            }
+            _ => panic!("Expected if expression"),
+        }
+    }
+
+    #[test]
+    fn test_let_bindings() {
+        let source = "(let ((x 10) (y 20)) (+ x y))";
+        let module = parse(source).unwrap();
+        
+        match &module.body[0] {
+            TopLevel::Expr(Expr::Let { bindings, body }) => {
+                assert_eq!(bindings.len(), 2);
+                assert!(matches!(bindings[0].0, Pattern::Identifier(_)));
+                assert!(matches!(bindings[1].0, Pattern::Identifier(_)));
+                assert!(matches!(body.as_ref(), Expr::Call { .. }));
+            }
+            _ => panic!("Expected let expression"),
+        }
+    }
+
+    #[test]
+    fn test_let_star_bindings() {
+        let source = "(let* ((x 10) (y (+ x 5))) (+ x y))";
+        let module = parse(source).unwrap();
+        
+        match &module.body[0] {
+            TopLevel::Expr(Expr::LetStar { bindings, body }) => {
+                assert_eq!(bindings.len(), 2);
+                assert!(matches!(body.as_ref(), Expr::Call { .. }));
+            }
+            _ => panic!("Expected let* expression"),
+        }
+    }
+
+    #[test]
+    fn test_if_expressions() {
+        let source = "(if true 1 2)";
+        let module = parse(source).unwrap();
+        
+        match &module.body[0] {
+            TopLevel::Expr(Expr::If { condition, then_branch, else_branch }) => {
+                assert!(matches!(condition.as_ref(), Expr::Literal(Literal::Bool(true))));
+                assert!(matches!(then_branch.as_ref(), Expr::Literal(Literal::Int(1))));
+                assert!(matches!(else_branch.as_ref(), Expr::Literal(Literal::Int(2))));
+            }
+            _ => panic!("Expected if expression"),
+        }
+    }
+
+    #[test]
+    fn test_if_let_expressions() {
+        let source = "(if-let (x some-value) x none)";
+        let module = parse(source).unwrap();
+        
+        match &module.body[0] {
+            TopLevel::Expr(Expr::IfLet { identifier, expr, then_branch, else_branch }) => {
+                assert_eq!(identifier, "x");
+                assert!(matches!(expr.as_ref(), Expr::Identifier(_)));
+                assert!(matches!(then_branch.as_ref(), Expr::Identifier(_)));
+                assert!(matches!(else_branch.as_ref(), Expr::Identifier(_)));
+            }
+            _ => panic!("Expected if-let expression"),
+        }
+    }
+
+    #[test]
+    fn test_function_definitions() {
+        let source = "(fun (add x :int y :int) :int (+ x y))";
+        let module = parse(source).unwrap();
+        
+        match &module.body[0] {
+            TopLevel::FunDef(fun_def) => {
+                assert_eq!(fun_def.name, "add");
+                assert_eq!(fun_def.params.len(), 2);
+                assert_eq!(fun_def.return_type, Type::Int);
+                assert!(matches!(fun_def.body, Expr::Call { .. }));
+            }
+            _ => panic!("Expected function definition"),
+        }
+    }
+
+    #[test]
+    fn test_function_definitions_with_split_type_annotations() {
+        let source = "(fun (add x : int y : int) : int (+ x y))";
+        let module = parse(source).unwrap();
+        
+        match &module.body[0] {
+            TopLevel::FunDef(fun_def) => {
+                assert_eq!(fun_def.name, "add");
+                assert_eq!(fun_def.params.len(), 2);
+                assert_eq!(fun_def.return_type, Type::Int);
+            }
+            _ => panic!("Expected function definition"),
+        }
+    }
+
+    #[test]
+    fn test_struct_definitions() {
+        let source = "(def (Point T) (struct x :T y :T))";
+        let module = parse(source).unwrap();
+        
+        match &module.body[0] {
+            TopLevel::StructDef(struct_def) => {
+                assert_eq!(struct_def.name, "Point");
+                assert_eq!(struct_def.params.len(), 1);
+                assert_eq!(struct_def.params[0], "T");
+                assert_eq!(struct_def.fields.len(), 2);
+                assert_eq!(struct_def.fields[0].0, "x");
+                assert_eq!(struct_def.fields[1].0, "y");
+            }
+            _ => panic!("Expected struct definition"),
+        }
+    }
+
+    #[test]
+    fn test_struct_definitions_with_split_type_annotations() {
+        let source = "(def (Point T) (struct x : T y : T))";
+        let module = parse(source).unwrap();
+        
+        match &module.body[0] {
+            TopLevel::StructDef(struct_def) => {
+                assert_eq!(struct_def.name, "Point");
+                assert_eq!(struct_def.fields.len(), 2);
+            }
+            _ => panic!("Expected struct definition"),
+        }
+    }
+
+    #[test]
+    fn test_variable_definitions() {
+        let source = "(def x 42)";
+        let module = parse(source).unwrap();
+        
+        match &module.body[0] {
+            TopLevel::VarDef(name, expr) => {
+                assert_eq!(name, "x");
+                assert!(matches!(expr, Expr::Literal(Literal::Int(42))));
+            }
+            _ => panic!("Expected variable definition"),
+        }
+    }
+
+    #[test]
+    fn test_variable_definitions_with_type_annotations() {
+        let source = "(def x :int 42)";
+        let module = parse(source).unwrap();
+        
+        match &module.body[0] {
+            TopLevel::VarDef(name, expr) => {
+                assert_eq!(name, "x");
+                assert!(matches!(expr, Expr::Literal(Literal::Int(42))));
+            }
+            _ => panic!("Expected variable definition"),
+        }
+
+        let source = "(def x : int 42)";
+        let module = parse(source).unwrap();
+        
+        match &module.body[0] {
+            TopLevel::VarDef(name, expr) => {
+                assert_eq!(name, "x");
+                assert!(matches!(expr, Expr::Literal(Literal::Int(42))));
+            }
+            _ => panic!("Expected variable definition"),
+        }
+    }
+
+    #[test]
+    fn test_module_definitions_with_provides_require() {
+        let source = r#"
+            (provides add subtract)
+            (require "math")
+            (fun (add x :int y :int) :int (+ x y))
+            (fun (subtract x :int y :int) :int (- x y))
+        "#;
+        let module = parse(source).unwrap();
+        
+        assert_eq!(module.provides.len(), 2);
+        assert_eq!(module.provides[0], "add");
+        assert_eq!(module.provides[1], "subtract");
+        
+        assert_eq!(module.requires.len(), 1);
+        assert_eq!(module.requires[0], "math");
+        
+        assert_eq!(module.body.len(), 2);
+        assert!(matches!(module.body[0], TopLevel::FunDef(_)));
+        assert!(matches!(module.body[1], TopLevel::FunDef(_)));
+    }
+
+    // --- Error Handling Tests ---
+
+    #[test]
+    fn test_invalid_syntax_handling() {
+        // Unclosed parenthesis
+        let result = parse("(+ 1 2");
+        assert!(result.is_err());
+
+        // Invalid function definition
+        let result = parse("(fun)");
+        assert!(result.is_err());
+
+        // Invalid let binding
+        let result = parse("(let (x) x)");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_malformed_expressions() {
+        // Empty list - this might actually parse successfully as an empty module
+        // Let's test a different malformed expression
+        let result = parse("(");
+        assert!(result.is_err());
+
+        // Invalid if expression (wrong number of arguments)
+        let result = parse("(if true)");
+        assert!(result.is_err());
+
+        let result = parse("(if true 1)");
+        assert!(result.is_err());
+
+        // Invalid let binding format
+        let result = parse("(let ((x)) x)");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_type_annotation_parsing_errors() {
+        // Invalid function parameter format
+        let result = parse("(fun (add x) (+ x 1))");
+        assert!(result.is_err());
+
+        // Invalid struct field format
+        let result = parse("(def (Point) (struct x))");
+        assert!(result.is_err());
+    }
+
+    // --- Integration Tests ---
+
+    #[test]
+    fn test_parse_complete_valid_programs() {
+        let source = r#"
+            (provides factorial fibonacci)
+            (require "math")
+            
+            (def PI :float 3.14159)
+            
+            (fun (factorial n :int) :int
+                (if (= n 0)
+                    1
+                    (* n (factorial (- n 1)))))
+            
+            (fun (fibonacci n :int) :int
+                (if (< n 2)
+                    n
+                    (+ (fibonacci (- n 1)) (fibonacci (- n 2)))))
+            
+            (def (Point T) (struct x :T y :T))
+        "#;
+        
+        let module = parse(source).unwrap();
+        
+        assert_eq!(module.provides.len(), 2);
+        assert_eq!(module.requires.len(), 1);
+        assert_eq!(module.body.len(), 4); // PI, factorial, fibonacci, Point
+        
+        // Check that we have the expected definitions
+        let mut var_defs = 0;
+        let mut fun_defs = 0;
+        let mut struct_defs = 0;
+        
+        for item in &module.body {
+            match item {
+                TopLevel::VarDef(_, _) => var_defs += 1,
+                TopLevel::FunDef(_) => fun_defs += 1,
+                TopLevel::StructDef(_) => struct_defs += 1,
+                _ => {}
+            }
+        }
+        
+        assert_eq!(var_defs, 1);
+        assert_eq!(fun_defs, 2);
+        assert_eq!(struct_defs, 1);
+    }
+
+    #[test]
+    fn test_parse_examples_from_language_specification() {
+        // Basic arithmetic
+        let source = "(+ (* 2 3) (/ 8 4))";
+        let module = parse(source).unwrap();
+        assert_eq!(module.body.len(), 1);
+
+        // Conditional logic
+        let source = "(if (> x 0) (print \"positive\") (print \"non-positive\"))";
+        let module = parse(source).unwrap();
+        assert_eq!(module.body.len(), 1);
+
+        // Function with multiple parameters
+        let source = "(fun (distance p1 :(Point float) p2 :(Point float)) :float (sqrt (+ (square (- (get p2 x) (get p1 x))) (square (- (get p2 y) (get p1 y))))))";
+        let module = parse(source).unwrap();
+        assert_eq!(module.body.len(), 1);
+    }
+
+    #[test]
+    fn test_string_parsing() {
+        let source = r#""hello world""#;
+        let module = parse(source).unwrap();
+        
+        match &module.body[0] {
+            TopLevel::Expr(expr) => {
+                // String should be parsed as a series of cons calls
+                assert!(matches!(expr, Expr::Call { .. }));
+            }
+            _ => panic!("Expected expression"),
+        }
+    }
+
+    #[test]
+    fn test_quote_expressions() {
+        let source = "(quote (1 2 3))";
+        let module = parse(source).unwrap();
+        
+        match &module.body[0] {
+            TopLevel::Expr(Expr::Quote(_)) => {}, // Success
+            _ => panic!("Expected quote expression"),
+        }
+    }
+
+    #[test]
+    fn test_function_expressions() {
+        // Test that function expressions can be parsed when used in context
+        // For now, we'll test that function definitions work correctly
+        // since the distinction between function expressions and definitions
+        // depends on context in the parser
+        let source = "(fun (identity x :int) :int x)";
+        let module = parse(source).unwrap();
+        
+        match &module.body[0] {
+            TopLevel::FunDef(fun_def) => {
+                assert_eq!(fun_def.name, "identity");
+                assert_eq!(fun_def.params.len(), 1);
+                assert_eq!(fun_def.return_type, Type::Int);
+            }
+            _ => panic!("Expected function definition"),
+        }
+    }
+
+    #[test]
+    fn test_complex_type_parsing() {
+        // Option type
+        let source = "(def x :(Option int) none)";
+        let module = parse(source).unwrap();
+        assert_eq!(module.body.len(), 1);
+
+        // Function type
+        let source = "(def f :(fun-type (int int) bool) some-function)";
+        let module = parse(source).unwrap();
+        assert_eq!(module.body.len(), 1);
+
+        // Generic type
+        let source = "(def (Container T) (struct value :T))";
+        let module = parse(source).unwrap();
+        assert_eq!(module.body.len(), 1);
+    }
+
+    #[test]
+    fn test_pattern_parsing() {
+        // Simple identifier pattern
+        let source = "(let ((x 10)) x)";
+        let module = parse(source).unwrap();
+        match &module.body[0] {
+            TopLevel::Expr(Expr::Let { bindings, .. }) => {
+                assert!(matches!(bindings[0].0, Pattern::Identifier(_)));
+            }
+            _ => panic!("Expected let expression"),
+        }
+    }
+
+    #[test]
+    fn test_nested_function_calls() {
+        let source = "(foo (bar (baz 1 2) 3) 4)";
+        let module = parse(source).unwrap();
+        
+        match &module.body[0] {
+            TopLevel::Expr(Expr::Call { function, arguments }) => {
+                assert!(matches!(function.as_ref(), Expr::Identifier(_)));
+                assert_eq!(arguments.len(), 2);
+                assert!(matches!(arguments[0], Expr::Call { .. }));
+            }
+            _ => panic!("Expected nested function calls"),
+        }
+    }
+
+    #[test]
+    fn test_multiple_top_level_definitions() {
+        let source = r#"
+            (def x 10)
+            (def y 20)
+            (fun (add a :int b :int) :int (+ a b))
+            (add x y)
+        "#;
+        
+        let module = parse(source).unwrap();
+        assert_eq!(module.body.len(), 4);
+        
+        assert!(matches!(module.body[0], TopLevel::VarDef(_, _)));
+        assert!(matches!(module.body[1], TopLevel::VarDef(_, _)));
+        assert!(matches!(module.body[2], TopLevel::FunDef(_)));
+        assert!(matches!(module.body[3], TopLevel::Expr(_)));
+    }
+
+    #[test]
+    fn test_empty_module() {
+        let source = "";
+        let module = parse(source).unwrap();
+        
+        assert_eq!(module.provides.len(), 0);
+        assert_eq!(module.requires.len(), 0);
+        assert_eq!(module.body.len(), 0);
+    }
+
+    #[test]
+    fn test_whitespace_and_comments_handling() {
+        // Note: This test assumes the lexpr parser handles comments
+        let source = r#"
+            ; This is a comment
+            (def x 42)  ; Another comment
+            
+            ; More comments
+            (+ x 1)
+        "#;
+        
+        let module = parse(source).unwrap();
+        assert_eq!(module.body.len(), 2);
     }
 }

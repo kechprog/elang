@@ -1,0 +1,21 @@
+;; Sample Elang file for testing the LSP server
+
+(def PI 3.14159)
+
+(fun (add x :int y :int) :int
+  (+ x y))
+
+(fun (factorial n :int) :int
+  (if (= n 0)
+      1
+      (* n (factorial (- n 1)))))
+
+(def (Point T) (struct x :T y :T))
+
+(fun (distance p1 :(Point float) p2 :(Point float)) :float
+  (let ((dx (- (get p2 x) (get p1 x)))
+        (dy (- (get p2 y) (get p1 y))))
+    (sqrt (+ (* dx dx) (* dy dy)))))
+
+(def origin (Point 0.0 0.0))
+(def result (add 5 10))

@@ -1,0 +1,9 @@
+[package]
+name = "elang_parser"
+version = "0.1.0"
+edition = "2021"
+description = "Parser for the Elang programming language"
+
+[dependencies]
+elang_ast = { path = "../elang_ast" }
+lexpr = "0.2.7"

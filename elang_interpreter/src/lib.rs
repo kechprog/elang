@@ -1,6 +1,5 @@
 pub mod ast;
 pub mod interpreter;
-pub mod parser;
 pub mod stdlib;
 
 use ast::Value;
@@ -8,7 +7,7 @@ use interpreter::Interpreter;
 
 impl Interpreter {
     pub fn eval_source(&mut self, source: &str) -> Result<Value, String> {
-        let module = parser::parse(source)?;
+        let module = elang_parser::parse(source)?;
         if module.body.is_empty() {
             return Ok(Value::Optional(None));
         }

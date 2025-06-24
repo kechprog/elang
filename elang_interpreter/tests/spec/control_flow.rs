@@ -2,7 +2,7 @@ use elang_interpreter::{ast::{self, Value}, interpreter};
 
 fn eval_source(source: &str) -> Result<ast::Value, String> {
     let mut interpreter = interpreter::Interpreter::new();
-    let module = elang_interpreter::parser::parse(source)?;
+    let module = elang_parser::parse(source)?;
     if module.body.is_empty() {
         return Ok(ast::Value::Optional(None));
     }

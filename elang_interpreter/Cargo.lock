@@ -15,11 +15,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9555578bc9e57714c812a1f84e4fc5b4d21fcb063490c624de019f7464c91268"
 
 [[package]]
-name = "elang_interpreter"
+name = "elang_ast"
 version = "0.1.0"
 dependencies = [
  "lexpr",
+]
+
+[[package]]
+name = "elang_interpreter"
+version = "0.1.0"
+dependencies = [
+ "elang_ast",
+ "elang_parser",
+ "lexpr",
  "tempfile",
+]
+
+[[package]]
+name = "elang_parser"
+version = "0.1.0"
+dependencies = [
+ "elang_ast",
+ "lexpr",
 ]
 
 [[package]]

@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+// Re-export the core AST types from elang_ast
+pub use elang_ast::*;
+
 // --- Runtime Values ---
 
 /// Represents a runtime value in the Elang interpreter.
@@ -137,128 +140,4 @@ impl Environment {
     pub fn define(&mut self, name: String, value: Value) {
         self.bindings.insert(name, value);
     }
-}
-
-
-// --- AST (Abstract Syntax Tree) Nodes ---
-
-#[derive(Debug, Clone)]
-pub enum TopLevel {
-    Expr(Expr),
-    StructDef(StructDef),
-    VarDef(String, Expr),
-    FunDef(FunDef),
-    Provides(Vec<String>),
-    Require(String),
-}
-
-#[derive(Debug, Clone)]
-pub struct Module {
-    pub provides: Vec<String>,
-    pub requires: Vec<String>,
-    pub body: Vec<TopLevel>,
-}
-
-#[derive(Debug, Clone)]
-pub struct StructDef {
-    pub name: String,
-    pub params: Vec<String>,
-    pub fields: Vec<(String, Type)>,
-}
-
-#[derive(Debug, Clone)]
-pub struct FunDef {
-    pub name: String,
-    pub params: Vec<(Pattern, Type)>,
-    pub return_type: Type,
-    pub body: Expr,
-}
-
-/// Represents an expression that can be evaluated to a `Value`.
-#[derive(Debug, Clone)]
-pub enum Expr {
-    // Atoms
-    Literal(Literal),
-    Identifier(String),
-
-    // Control Flow
-    Quote(lexpr::Value),
-    If {
-        condition: Box<Expr>,
-        then_branch: Box<Expr>,
-        else_branch: Box<Expr>,
-    },
-    IfLet {
-        identifier: String,
-        expr: Box<Expr>,
-        then_branch: Box<Expr>,
-        else_branch: Box<Expr>,
-    },
-    // Bindings
-    Let {
-        bindings: Vec<(Pattern, Expr)>,
-        body: Box<Expr>,
-    },
-
-    LetStar {
-        bindings: Vec<(Pattern, Expr)>,
-        body: Box<Expr>,
-    },
-
-    // Operations
-    Call {
-        function: Box<Expr>,
-        arguments: Vec<Expr>,
-    },
-    
-    // A function definition expression (lambda).
-    Function {
-        params: Vec<(Pattern, Type)>,
-        return_type: Type,
-        body: Box<Expr>,
-    },
-}
-
-/// Represents a literal value in the source code.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Literal {
-    Int(i64),
-    Float(f64),
-    Bool(bool),
-    Char(char),
-    Nil,
-}
-
-/// A destructuring pattern used in `let` bindings.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Pattern {
-    Identifier(String),
-    Struct {
-        name: String,
-        fields: Vec<String>,
-    },
-    List(Vec<Pattern>),
-}
-
-/// Represents a type annotation in the source code.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Type {
-    Int,
-    Float,
-    Bool,
-    Char,
-    Void,
-    GenericParam(String),
-    /// A user-defined type, like `string` or `(vec3 float)`.
-    Named {
-        name: String,
-        type_params: Vec<Type>,
-    },
-    /// A function's type signature, e.g., `(fun-type (int) bool)`.
-    Func {
-        param_types: Vec<Type>,
-        return_type: Box<Type>,
-    },
-    /// The built-in `(Option T)` type.
-    Option(Box<Type>),
 }

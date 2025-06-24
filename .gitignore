@@ -1,1 +1,4 @@
 elang_interpreter/target
+elang_ast/target
+elang_parser/target
+target

@@ -1,19 +1,11 @@
-use crate::ast::{self, Environment, Expr, Literal, Pattern, StructDef, TopLevel, Type, Value};
-use crate::parser;
+use crate::ast::{self, Environment, Value};
 use crate::stdlib;
+use elang_ast::{Expr, Literal, Pattern, StructDef, TopLevel, Type};
+use elang_parser as parser;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-
-impl TopLevel {
-    pub fn as_expr(&self) -> Option<&Expr> {
-        match self {
-            TopLevel::Expr(expr) => Some(expr),
-            _ => None,
-        }
-    }
-}
 
 #[derive(Clone)]
 pub struct Interpreter {
@@ -490,25 +482,25 @@ impl Interpreter {
  
     fn substitute_type(
         &self,
-        t: &ast::Type,
-        type_map: &HashMap<String, ast::Type>,
-    ) -> Result<ast::Type, String> {
+        t: &Type,
+        type_map: &HashMap<String, Type>,
+    ) -> Result<Type, String> {
         match t {
-            ast::Type::GenericParam(name) => type_map
+            Type::GenericParam(name) => type_map
                 .get(name)
                 .cloned()
                 .ok_or_else(|| format!("Unresolved generic parameter: {}", name)),
-            ast::Type::Named { name, type_params } => {
+            Type::Named { name, type_params } => {
                 let new_params = type_params
                     .iter()
                     .map(|p| self.substitute_type(p, type_map))
                     .collect::<Result<_, _>>()?;
-                Ok(ast::Type::Named {
+                Ok(Type::Named {
                     name: name.clone(),
                     type_params: new_params,
                 })
             }
-            ast::Type::Func {
+            Type::Func {
                 param_types,
                 return_type,
             } => {
@@ -517,14 +509,14 @@ impl Interpreter {
                     .map(|p| self.substitute_type(p, type_map))
                     .collect::<Result<_, _>>()?;
                 let new_return = self.substitute_type(return_type, type_map)?;
-                Ok(ast::Type::Func {
+                Ok(Type::Func {
                     param_types: new_params,
                     return_type: Box::new(new_return),
                 })
             }
-            ast::Type::Option(inner) => {
+            Type::Option(inner) => {
                 let new_inner = self.substitute_type(inner, type_map)?;
-                Ok(ast::Type::Option(Box::new(new_inner)))
+                Ok(Type::Option(Box::new(new_inner)))
             }
             _ => Ok(t.clone()),
         }
@@ -534,13 +526,13 @@ impl Interpreter {
         &self,
         name: &str,
         _env: &Arc<Environment>,
-    ) -> Result<Option<ast::Type>, String> {
+    ) -> Result<Option<Type>, String> {
         match name {
-            "int" => Ok(Some(ast::Type::Int)),
-            "float" => Ok(Some(ast::Type::Float)),
-            "bool" => Ok(Some(ast::Type::Bool)),
-            "char" => Ok(Some(ast::Type::Char)),
-            "string" => Ok(Some(ast::Type::Named {
+            "int" => Ok(Some(Type::Int)),
+            "float" => Ok(Some(Type::Float)),
+            "bool" => Ok(Some(Type::Bool)),
+            "char" => Ok(Some(Type::Char)),
+            "string" => Ok(Some(Type::Named {
                 name: "cons".to_string(),
                 type_params: vec![Type::Char],
             })),
@@ -596,15 +588,15 @@ impl Interpreter {
         format!("{}-{}", base_name, parts.join("-"))
     }
 
-    fn type_to_string(&self, ty: &ast::Type) -> String {
+    fn type_to_string(&self, ty: &Type) -> String {
         match ty {
-            ast::Type::Int => ":int".to_string(),
-            ast::Type::Float => ":float".to_string(),
-            ast::Type::Bool => ":bool".to_string(),
-            ast::Type::Char => ":char".to_string(),
-            ast::Type::Void => ":void".to_string(),
-            ast::Type::GenericParam(p) => p.clone(),
-            ast::Type::Named { name, type_params } => {
+            Type::Int => ":int".to_string(),
+            Type::Float => ":float".to_string(),
+            Type::Bool => ":bool".to_string(),
+            Type::Char => ":char".to_string(),
+            Type::Void => ":void".to_string(),
+            Type::GenericParam(p) => p.clone(),
+            Type::Named { name, type_params } => {
                 if type_params.is_empty() {
                     name.clone()
                 } else {
@@ -612,7 +604,7 @@ impl Interpreter {
                     format!("({} {})", name, params.join(" "))
                 }
             }
-            ast::Type::Func {
+            Type::Func {
                 param_types,
                 return_type,
             } => {
@@ -623,19 +615,19 @@ impl Interpreter {
                     self.type_to_string_inner(return_type)
                 )
             }
-            ast::Type::Option(t) => format!("(Option {})", self.type_to_string_inner(t)),
+            Type::Option(t) => format!("(Option {})", self.type_to_string_inner(t)),
         }
     }
 
-    fn type_to_string_inner(&self, ty: &ast::Type) -> String {
+    fn type_to_string_inner(&self, ty: &Type) -> String {
         match ty {
-            ast::Type::Int => "int".to_string(),
-            ast::Type::Float => "float".to_string(),
-            ast::Type::Bool => "bool".to_string(),
-            ast::Type::Char => "char".to_string(),
-            ast::Type::Void => "void".to_string(),
-            ast::Type::GenericParam(p) => p.clone(),
-            ast::Type::Named { name, type_params } => {
+            Type::Int => "int".to_string(),
+            Type::Float => "float".to_string(),
+            Type::Bool => "bool".to_string(),
+            Type::Char => "char".to_string(),
+            Type::Void => "void".to_string(),
+            Type::GenericParam(p) => p.clone(),
+            Type::Named { name, type_params } => {
                 if type_params.is_empty() {
                     name.clone()
                 } else {
@@ -643,7 +635,7 @@ impl Interpreter {
                     format!("({} {})", name, params.join(" "))
                 }
             }
-            ast::Type::Func {
+            Type::Func {
                 param_types,
                 return_type,
             } => {
@@ -654,19 +646,19 @@ impl Interpreter {
                     self.type_to_string_inner(return_type)
                 )
             }
-            ast::Type::Option(t) => format!("(Option {})", self.type_to_string_inner(t)),
+            Type::Option(t) => format!("(Option {})", self.type_to_string_inner(t)),
         }
     }
 
-    fn type_to_string_static(ty: &ast::Type) -> String {
+    fn type_to_string_static(ty: &Type) -> String {
         match ty {
-            ast::Type::Int => "int".to_string(),
-            ast::Type::Float => "float".to_string(),
-            ast::Type::Bool => "bool".to_string(),
-            ast::Type::Char => "char".to_string(),
-            ast::Type::Void => "void".to_string(),
-            ast::Type::GenericParam(p) => p.clone(),
-            ast::Type::Named { name, type_params } => {
+            Type::Int => "int".to_string(),
+            Type::Float => "float".to_string(),
+            Type::Bool => "bool".to_string(),
+            Type::Char => "char".to_string(),
+            Type::Void => "void".to_string(),
+            Type::GenericParam(p) => p.clone(),
+            Type::Named { name, type_params } => {
                 if type_params.is_empty() {
                     name.clone()
                 } else {
@@ -674,7 +666,7 @@ impl Interpreter {
                     format!("({} {})", name, params.join(" "))
                 }
             }
-            ast::Type::Func {
+            Type::Func {
                 param_types,
                 return_type,
             } => {
@@ -685,18 +677,18 @@ impl Interpreter {
                     Self::type_to_string_static(return_type)
                 )
             }
-            ast::Type::Option(t) => format!("(Option {})", Self::type_to_string_static(t)),
+            Type::Option(t) => format!("(Option {})", Self::type_to_string_static(t)),
         }
     }
 
     fn deduce_type_from_value(
-        expected_type: &ast::Type,
+        expected_type: &Type,
         value: &Value,
-        type_map: &mut HashMap<String, ast::Type>,
+        type_map: &mut HashMap<String, Type>,
         env: &Arc<Environment>,
     ) -> Result<(), String> {
         match expected_type {
-            ast::Type::GenericParam(param_name) => {
+            Type::GenericParam(param_name) => {
                 // Deduce the concrete type from the value
                 let concrete_type = Self::value_to_type(value, env)?;
                 
@@ -722,10 +714,10 @@ impl Interpreter {
                 }
                 Ok(())
             }
-            ast::Type::Named { name, type_params } => {
+            Type::Named { name, type_params } => {
                 // For named types with parameters, we need to check the value matches
                 let value_type = Self::value_to_type(value, env)?;
-                if let ast::Type::Named { name: ref value_name, type_params: ref value_params } = value_type {
+                if let Type::Named { name: ref value_name, type_params: ref value_params } = value_type {
                     if name == value_name && type_params.len() == value_params.len() {
                         for (expected_param, value_param) in type_params.iter().zip(value_params.iter()) {
                             Self::deduce_type_from_type(expected_param, value_param, type_map)?;
@@ -746,7 +738,7 @@ impl Interpreter {
                     ))
                 }
             }
-            ast::Type::Option(inner_type) => {
+            Type::Option(inner_type) => {
                 match value {
                     Value::Optional(Some(inner_value)) => {
                         Self::deduce_type_from_value(inner_type, inner_value, type_map, env)
@@ -778,12 +770,12 @@ impl Interpreter {
     }
 
     fn deduce_type_from_type(
-        expected_type: &ast::Type,
-        actual_type: &ast::Type,
-        type_map: &mut HashMap<String, ast::Type>,
+        expected_type: &Type,
+        actual_type: &Type,
+        type_map: &mut HashMap<String, Type>,
     ) -> Result<(), String> {
         match expected_type {
-            ast::Type::GenericParam(param_name) => {
+            Type::GenericParam(param_name) => {
                 // Clean up the parameter name (remove leading colon if present)
                 let clean_param_name = if param_name.starts_with(':') {
                     &param_name[1..]
@@ -805,8 +797,8 @@ impl Interpreter {
                 }
                 Ok(())
             }
-            ast::Type::Named { name, type_params } => {
-                if let ast::Type::Named { name: actual_name, type_params: actual_params } = actual_type {
+            Type::Named { name, type_params } => {
+                if let Type::Named { name: actual_name, type_params: actual_params } = actual_type {
                     if name == actual_name && type_params.len() == actual_params.len() {
                         for (expected_param, actual_param) in type_params.iter().zip(actual_params.iter()) {
                             Self::deduce_type_from_type(expected_param, actual_param, type_map)?;
@@ -841,19 +833,19 @@ impl Interpreter {
         }
     }
 
-    fn value_to_type(value: &Value, env: &Arc<Environment>) -> Result<ast::Type, String> {
+    fn value_to_type(value: &Value, env: &Arc<Environment>) -> Result<Type, String> {
         match value {
-            Value::Int(_) => Ok(ast::Type::Int),
-            Value::Float(_) => Ok(ast::Type::Float),
-            Value::Bool(_) => Ok(ast::Type::Bool),
-            Value::Char(_) => Ok(ast::Type::Char),
+            Value::Int(_) => Ok(Type::Int),
+            Value::Float(_) => Ok(Type::Float),
+            Value::Bool(_) => Ok(Type::Bool),
+            Value::Char(_) => Ok(Type::Char),
             Value::Optional(Some(inner)) => {
                 let inner_type = Self::value_to_type(inner, env)?;
-                Ok(ast::Type::Option(Box::new(inner_type)))
+                Ok(Type::Option(Box::new(inner_type)))
             }
             Value::Optional(None) => {
                 // For None, we can't determine the inner type, so we use a generic parameter
-                Ok(ast::Type::Option(Box::new(ast::Type::GenericParam("T".to_string()))))
+                Ok(Type::Option(Box::new(Type::GenericParam("T".to_string()))))
             }
             Value::Struct(instance) => {
                 // Try to parse the struct name to extract type parameters
@@ -862,23 +854,23 @@ impl Interpreter {
                     let base_name = parts[0];
                     let type_params = parts[1..].iter().map(|part| {
                         match *part {
-                            "int" => ast::Type::Int,
-                            "float" => ast::Type::Float,
-                            "bool" => ast::Type::Bool,
-                            "char" => ast::Type::Char,
-                            _ => ast::Type::Named {
+                            "int" => Type::Int,
+                            "float" => Type::Float,
+                            "bool" => Type::Bool,
+                            "char" => Type::Char,
+                            _ => Type::Named {
                                 name: part.to_string(),
                                 type_params: vec![],
                             }
                         }
                     }).collect();
                     
-                    Ok(ast::Type::Named {
+                    Ok(Type::Named {
                         name: base_name.to_string(),
                         type_params,
                     })
                 } else {
-                    Ok(ast::Type::Named {
+                    Ok(Type::Named {
                         name: instance.name.clone(),
                         type_params: vec![],
                     })
@@ -888,23 +880,23 @@ impl Interpreter {
         }
     }
 
-    fn types_equal(a: &ast::Type, b: &ast::Type) -> bool {
+    fn types_equal(a: &Type, b: &Type) -> bool {
         match (a, b) {
-            (ast::Type::Int, ast::Type::Int) => true,
-            (ast::Type::Float, ast::Type::Float) => true,
-            (ast::Type::Bool, ast::Type::Bool) => true,
-            (ast::Type::Char, ast::Type::Char) => true,
-            (ast::Type::Void, ast::Type::Void) => true,
-            (ast::Type::GenericParam(a), ast::Type::GenericParam(b)) => a == b,
-            (ast::Type::Named { name: a_name, type_params: a_params },
-             ast::Type::Named { name: b_name, type_params: b_params }) => {
+            (Type::Int, Type::Int) => true,
+            (Type::Float, Type::Float) => true,
+            (Type::Bool, Type::Bool) => true,
+            (Type::Char, Type::Char) => true,
+            (Type::Void, Type::Void) => true,
+            (Type::GenericParam(a), Type::GenericParam(b)) => a == b,
+            (Type::Named { name: a_name, type_params: a_params },
+             Type::Named { name: b_name, type_params: b_params }) => {
                 a_name == b_name &&
                 a_params.len() == b_params.len() &&
                 a_params.iter().zip(b_params.iter()).all(|(a, b)| Self::types_equal(a, b))
             }
-            (ast::Type::Option(a), ast::Type::Option(b)) => Self::types_equal(a, b),
-            (ast::Type::Func { param_types: a_params, return_type: a_ret },
-             ast::Type::Func { param_types: b_params, return_type: b_ret }) => {
+            (Type::Option(a), Type::Option(b)) => Self::types_equal(a, b),
+            (Type::Func { param_types: a_params, return_type: a_ret },
+             Type::Func { param_types: b_params, return_type: b_ret }) => {
                 a_params.len() == b_params.len() &&
                 a_params.iter().zip(b_params.iter()).all(|(a, b)| Self::types_equal(a, b)) &&
                 Self::types_equal(a_ret, b_ret)

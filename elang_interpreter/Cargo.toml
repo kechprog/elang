@@ -12,9 +12,12 @@ name = "elang"
 path = "src/main.rs"
 
 [dependencies]
+elang_ast = { path = "../elang_ast" }
+elang_parser = { path = "../elang_parser" }
 lexpr = "0.2.7"
 
 [dev-dependencies]
+elang_parser = { path = "../elang_parser" }
 tempfile = "3.10.1"
 
 [[test]]

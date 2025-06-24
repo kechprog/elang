@@ -1,0 +1,23 @@
+[package]
+name = "elang_lsp"
+version = "0.1.0"
+edition = "2021"
+description = "Language Server Protocol implementation for the Elang programming language"
+
+[[bin]]
+name = "elang_lsp"
+path = "src/main.rs"
+
+[dependencies]
+elang_ast = { path = "../elang_ast" }
+elang_parser = { path = "../elang_parser" }
+tower-lsp = "0.20"
+tokio = { version = "1.0", features = ["full"] }
+serde_json = "1.0"
+dashmap = "5.0"
+serde = { version = "1.0", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tokio-test = "0.4"

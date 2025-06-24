@@ -12,7 +12,7 @@ fn eval_source_with_modules(main_source: &str, modules: &[(&str, &str)]) -> Resu
     }
 
     let mut interpreter = interpreter::Interpreter::new_with_path(dir.path().to_str().unwrap().to_string());
-    let module = elang_interpreter::parser::parse(main_source)?;
+    let module = elang_parser::parse(main_source)?;
     
     // Process requires first
     for require_path in module.requires {
